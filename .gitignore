@@ -15,3 +15,4 @@ samples/lib/
 /core/core.iml
 /tools/tools.iml
 /.agent-logs/
+.DS_Store

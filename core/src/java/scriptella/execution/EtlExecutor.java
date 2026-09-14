@@ -35,34 +35,40 @@ import java.util.logging.Logger;
 
 
 /**
- * Executor for ETL files.
- * <p>Use {@link ConfigurationFactory} to parse script files and to configure
- * the executor.
- * <p>The usage scenario of this class may be described using the following steps:
- * <ul>
- * <li>{@link #EtlExecutor(scriptella.configuration.ConfigurationEl)} Create an instance of this class
- * and pass a {@link scriptella.configuration.ConfigurationFactory#createConfiguration() script file configuration}.
- * <li>{@link #execute() Execute} the script
- * </ul>
- * </pre></code>
- * <p>Additionally simplified helper methods are declared in this class:
- * <ul>
- * <li>{@link #newExecutor(java.io.File)}
- * <li>{@link #newExecutor(java.net.URL)}
- * <li>{@link #newExecutor(java.net.URL, java.util.Map)}
- * </ul>
- * <p/>
+ * Executes a Scriptella ETL file.
+ *
+ * <p>The simplest way to run a file is:</p>
+ * <pre>{@code
+ * EtlExecutor executor = EtlExecutor.newExecutor(new File("etl.xml"));
+ * ExecutionStatistics statistics = executor.execute();
+ * }</pre>
+ *
+ * <p>{@link #newExecutor(File)} and {@link #newExecutor(URL)} use the current
+ * {@linkplain System#getProperties() system properties} as external ETL
+ * parameters. To supply parameters explicitly, use
+ * {@link #newExecutor(URL, Map)}. External parameters take precedence over
+ * properties declared in the ETL file.</p>
+ *
+ * <p>For more control, use {@link ConfigurationFactory} to parse the ETL file,
+ * then pass the resulting {@link ConfigurationEl} to
+ * {@link #EtlExecutor(ConfigurationEl)}.</p>
+ *
  * <h3>ETL Cancellation</h3>
- * Scriptella execution model relies on a standard Java {@link Thread#interrupt()} mechanism.
- * <p>To interrupt the ETL execution invoke {@link Thread#interrupt()} on a thread
- * which {@link #execute() started} ETL operation. As a part of interruption process
- * the engine tries to roll back all changes made during the ETL operation.
- * <p>{@link java.util.concurrent.ExecutorService} and {@link java.util.concurrent.Future}
- * can also be used to control ETL execution.
+ * <p>Scriptella uses the standard Java {@link Thread#interrupt()} mechanism.
+ * Interrupt the thread that is running {@link #execute()}; the engine then
+ * attempts to roll back changes made during the ETL operation. A cancellation
+ * is reported as an {@link EtlExecutorException} for which
+ * {@link EtlExecutorException#isCancelled()} returns {@code true}.</p>
+ *
+ * <p>{@link java.util.concurrent.ExecutorService} and
+ * {@link java.util.concurrent.Future} can also be used to submit and cancel an
+ * execution.</p>
+ *
  * <h3>Integration with third-party systems</h3>
- * For convenience EtlExecutor implements {@link Runnable} and {@link java.util.concurrent.Callable}.
- * This feature simplifies integration of Scriptella executors with {@link java.util.concurrent.Executors}
- * or other systems like Spring/Quartz etc. It also minimizes application code dependency on Scriptella.
+ * <p>For convenience, {@code EtlExecutor} implements {@link Runnable} and
+ * {@link Callable}. Use {@link #call()} when execution statistics or the checked
+ * {@link EtlExecutorException} are needed. {@link #run()} discards the statistics
+ * and wraps execution failures in a {@link SystemException}.</p>
  *
  * @author Fyodor Kupolov
  * @version 1.0
@@ -74,7 +80,8 @@ public class EtlExecutor implements Runnable, Callable<ExecutionStatistics> {
     private boolean suppressStatistics;
 
     /**
-     * Creates ETL executor.
+     * Creates an ETL executor without a configuration.
+     * Call {@link #setConfiguration(ConfigurationEl)} before executing it.
      */
     public EtlExecutor() {
     }
@@ -164,7 +171,8 @@ public class EtlExecutor implements Runnable, Callable<ExecutionStatistics> {
     /**
      * Executes ETL based on a specified configuration.
      *
-     * @param indicator progress indicator to use.
+     * @param indicator progress indicator to use, or {@code null} if progress
+     *                  reporting is not required.
      * @return execution statistics for ETL execution.
      * @throws EtlExecutorException if ETL fails.
      */
@@ -268,11 +276,11 @@ public class EtlExecutor implements Runnable, Callable<ExecutionStatistics> {
     }
 
     /**
-     * Helper method to create a new ScriptExecutor for specified script URL.
+     * Creates an ETL executor for the specified script URL.
      * <p>Calls {@link #newExecutor(java.net.URL, java.util.Map)} and passes {@link System#getProperties() System properties}
      * as external properties.
      *
-     * @param scriptFileUrl URL of script file.
+     * @param scriptFileUrl URL of the ETL file.
      * @return configured instance of script executor.
      */
     @ThreadSafe
@@ -281,10 +289,13 @@ public class EtlExecutor implements Runnable, Callable<ExecutionStatistics> {
     }
 
     /**
-     * Helper method to create a new ScriptExecutor for specified script URL.
+     * Creates an ETL executor for the specified script URL and external
+     * parameters.
      *
-     * @param scriptFileUrl      URL of script file.
-     * @param externalProperties see {@link ConfigurationFactory#setExternalParameters(java.util.Map)}
+     * @param scriptFileUrl      URL of the ETL file.
+     * @param externalProperties external ETL parameters, or {@code null} for
+     *                           none; these take precedence over properties in
+     *                           the ETL file.
      * @return configured instance of script executor.
      * @see ConfigurationFactory
      */
@@ -301,10 +312,9 @@ public class EtlExecutor implements Runnable, Callable<ExecutionStatistics> {
     //Runnable/Callable convenience interfaces
 
     /**
-     * A runnable adapter for {@link #execute()} method.
-     * <p>Please note that due to a checked
-     * exceptions limitation a {@link scriptella.core.SystemException} is thrown instead of
-     * the {@link scriptella.execution.EtlExecutorException}.
+     * A {@link Runnable} adapter for {@link #execute()}.
+     * <p>Because {@link Runnable#run()} cannot declare checked exceptions, this
+     * method wraps an {@link EtlExecutorException} in a {@link SystemException}.</p>
      *
      * @throws SystemException a wrapped {@link scriptella.execution.EtlExecutorException}.
      * @see #execute()
@@ -318,7 +328,10 @@ public class EtlExecutor implements Runnable, Callable<ExecutionStatistics> {
     }
 
     /**
-     * A synonym for {@link #execute()}.
+     * A {@link Callable} adapter for {@link #execute()}.
+     *
+     * @return execution statistics for the ETL execution.
+     * @throws EtlExecutorException if ETL execution fails.
      */
     public ExecutionStatistics call() throws EtlExecutorException {
         return execute();
